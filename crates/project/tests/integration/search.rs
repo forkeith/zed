@@ -1,3 +1,4 @@
+use language::Buffer;
 use project::search::SearchQuery;
 use text::Rope;
 use util::{
@@ -131,6 +132,37 @@ fn test_case_sensitive_pattern_items() {
 }
 
 #[gpui::test]
+async fn test_multiline_regex_crlf(cx: &mut gpui::TestAppContext) {
+    // Verify that `$` line-end anchors work correctly on CRLF content.
+    // With .crlf(true) on the RegexBuilder, `$` in multiline mode matches
+    // before \r\n (not just before \n), so a pattern like `^hello$\r?\n`
+    // correctly matches "hello\r\n" in CRLF files.  Without .crlf(true),
+    // `$` would only anchor before a bare \n, so the `\r` before the newline
+    // would prevent the anchor from firing and the pattern would never match.
+    let search_query = SearchQuery::regex(
+        "^hello$\r?\n",
+        false,
+        false,
+        false,
+        false,
+        Default::default(),
+        Default::default(),
+        false,
+        None,
+    )
+    .expect("Should be able to create a regex SearchQuery");
+
+    let text = Rope::from("hello\r\nworld\r\nhello\r\nworld");
+    let snapshot = cx
+        .update(|app| Buffer::build_snapshot(text, None, None, None, app))
+        .await;
+
+    let results = search_query.search(&snapshot, None).await;
+    // Each "hello\r\n" is 7 bytes; matches should cover those byte ranges.
+    assert_eq!(results, vec![0..7, 14..21]);
+}
+
+#[gpui::test]
 async fn test_multiline_regex(cx: &mut gpui::TestAppContext) {
     let search_query = SearchQuery::regex(
         "^hello$\n",
@@ -145,7 +177,6 @@ async fn test_multiline_regex(cx: &mut gpui::TestAppContext) {
     )
     .expect("Should be able to create a regex SearchQuery");
 
-    use language::Buffer;
     let text = Rope::from("hello\nworld\nhello\nworld");
     let snapshot = cx
         .update(|app| Buffer::build_snapshot(text, None, None, None, app))
